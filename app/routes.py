@@ -97,6 +97,21 @@ async def upload_document(
         import os
         title = os.path.splitext(file.filename)[0]
 
+    # Check for duplicate file in same domain
+    from app.ingestion import file_hash
+    fhash = file_hash(content)
+    existing = db.execute(
+        select(AdvisorDocument).where(
+            AdvisorDocument.file_hash == fhash,
+            AdvisorDocument.domain == domain,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This file already exists in '{domain}' as '{existing.title}'",
+        )
+
     # Validate domain exists
     domain_obj = db.execute(
         select(AdvisorDomain).where(AdvisorDomain.name == domain)
