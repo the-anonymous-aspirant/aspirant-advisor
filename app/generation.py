@@ -127,12 +127,13 @@ def _call_ollama(prompt: str) -> str:
         "stream": False,
         "options": {
             "temperature": 0.1,
-            "num_predict": 1024,
+            "num_predict": 512,
+            "num_ctx": 4096,
         },
     }
 
     try:
-        resp = httpx.post(url, json=payload, timeout=120.0)
+        resp = httpx.post(url, json=payload, timeout=300.0)
         resp.raise_for_status()
         data = resp.json()
         return data.get("response", "")
