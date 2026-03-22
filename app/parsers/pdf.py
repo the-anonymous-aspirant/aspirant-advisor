@@ -29,7 +29,37 @@ def parse_pdf(file_path: str) -> list[ParsedSection]:
             page_sections = _split_page_into_sections(text, page_num)
             sections.extend(page_sections)
 
+    # If pdfplumber extracted nothing, fall back to OCR
+    if not sections:
+        logger.info("No text extracted from PDF, falling back to OCR: %s", file_path)
+        sections = _ocr_pdf(file_path)
+
     logger.info("Parsed PDF: %d sections from %s", len(sections), file_path)
+    return sections
+
+
+def _ocr_pdf(file_path: str) -> list[ParsedSection]:
+    """Extract text from scanned/image PDFs using Tesseract OCR."""
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+    except ImportError:
+        logger.warning("OCR dependencies not available (pytesseract, pdf2image)")
+        return []
+
+    sections = []
+    try:
+        images = convert_from_path(file_path, dpi=300)
+        for page_num, image in enumerate(images, start=1):
+            text = pytesseract.image_to_string(image)
+            if not text or not text.strip():
+                continue
+
+            page_sections = _split_page_into_sections(text, page_num)
+            sections.extend(page_sections)
+    except Exception as e:
+        logger.error("OCR failed for %s: %s", file_path, e)
+
     return sections
 
 
