@@ -76,7 +76,7 @@ def health_check(db: Session = Depends(get_db)):
 @router.post("/documents", response_model=DocumentResponse)
 async def upload_document(
     file: UploadFile = File(...),
-    title: str = Form(...),
+    title: str | None = Form(None),
     domain: str = Form(...),
     doc_type: str = Form("contract"),
     language: str = Form("en"),
@@ -91,6 +91,11 @@ async def upload_document(
     content = await file.read()
     if len(content) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"File exceeds {MAX_UPLOAD_SIZE_MB} MB limit")
+
+    # Default title to filename without extension
+    if not title:
+        import os
+        title = os.path.splitext(file.filename)[0]
 
     # Validate domain exists
     domain_obj = db.execute(
