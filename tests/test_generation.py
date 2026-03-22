@@ -35,25 +35,27 @@ def test_build_context_includes_metadata():
     context = build_context(chunks)
     assert "Test Doc" in context
     assert "Section 1" in context
-    assert "Page: 1" in context
+    assert "p.1" in context
     assert "Some content here" in context
 
 
 def test_verify_citations_passes_valid():
     chunks = [_make_chunk("Insurance covers delays over 4 hours.")]
-    answer = "Coverage applies. [Source: Test Doc | Section 1 | Page 1]"
+    answer = "Coverage applies. [Source: Test Doc | Section 1]"
     cleaned, verified = verify_citations(answer, chunks)
     assert len(verified) == 1
     assert verified[0]["document_title"] == "Test Doc"
-    assert "unverified" not in cleaned
+    # Citation markers are stripped from cleaned answer
+    assert "[Source:" not in cleaned
 
 
 def test_verify_citations_removes_invalid():
     chunks = [_make_chunk("Some content.")]
     answer = "Answer here. [Source: Nonexistent Doc | Section 3]"
     cleaned, verified = verify_citations(answer, chunks)
-    assert len(verified) == 0
-    assert "unverified" in cleaned
+    # Fallback: when no citations match, all chunks are added as sources
+    assert len(verified) == 1
+    assert verified[0]["document_title"] == "Test Doc"
 
 
 def test_verify_citations_handles_no_citations():
@@ -61,4 +63,6 @@ def test_verify_citations_handles_no_citations():
     answer = "Just a plain answer with no citations."
     cleaned, verified = verify_citations(answer, chunks)
     assert cleaned == answer
-    assert len(verified) == 0
+    # Fallback: all chunks are shown as sources when model doesn't cite
+    assert len(verified) == 1
+    assert verified[0]["document_title"] == "Test Doc"
