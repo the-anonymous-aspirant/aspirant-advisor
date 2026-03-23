@@ -45,6 +45,8 @@ def test_verify_citations_passes_valid():
     cleaned, verified = verify_citations(answer, chunks)
     assert len(verified) == 1
     assert verified[0]["document_title"] == "Test Doc"
+    assert verified[0]["section_title"] == "Section 1"
+    assert verified[0]["page_number"] == "1"
     # Citation markers are stripped from cleaned answer
     assert "[Source:" not in cleaned
 
@@ -66,3 +68,31 @@ def test_verify_citations_handles_no_citations():
     # Fallback: all chunks are shown as sources when model doesn't cite
     assert len(verified) == 1
     assert verified[0]["document_title"] == "Test Doc"
+
+
+def test_verify_citations_consolidates_by_document():
+    """Multiple chunks from the same document should produce one citation."""
+    doc_id = uuid.uuid4()
+    chunks = []
+    for i, (section, page) in enumerate([("Section 1", 5), ("Section 2", 6), ("Section 1", 7)]):
+        chunk = MagicMock()
+        chunk.id = uuid.uuid4()
+        chunk.content = f"Content from page {page}" + (" extra" * 10 if page == 6 else "")
+        chunk.section_id = None
+        chunk.section_title = section
+        chunk.page_number = page
+        doc = MagicMock()
+        doc.id = doc_id
+        doc.title = "My Contract"
+        doc.source_url = None
+        chunks.append((chunk, doc, 0.1))
+
+    answer = "Answer here. [My Contract]"
+    cleaned, verified = verify_citations(answer, chunks)
+    # Should be consolidated into one entry
+    assert len(verified) == 1
+    assert verified[0]["document_title"] == "My Contract"
+    assert verified[0]["section_title"] == "Section 1, Section 2"
+    assert verified[0]["page_number"] == "5, 6, 7"
+    # Best text should be the longest chunk
+    assert "extra" in verified[0]["text"]
