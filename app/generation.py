@@ -8,7 +8,8 @@ from app.models import AdvisorChunk, AdvisorDocument
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Answer the question using ONLY the provided sources. Never use outside knowledge.
+SYSTEM_PROMPT = """Always respond in English, even if sources are in another language.
+Answer the question using ONLY the provided sources. Never use outside knowledge.
 If the sources contain the answer, answer directly.
 If not, say "I could not find this in the indexed documents."
 Cite sources by name, like: [ecosio_contract] or [Employment Contract]."""
@@ -57,45 +58,50 @@ def verify_citations(
     citation_pattern = re.compile(r"\[(?:Source:\s*)?([^\]]+)\]")
     citations_found = citation_pattern.findall(answer)
 
-    verified_citations = []
-    seen_doc_ids = set()
+    # Collect matched document IDs from citations
+    matched_doc_ids = set()
 
     for citation_text in citations_found:
         for chunk, doc, distance in chunks:
             if doc.title in citation_text or citation_text.strip() in doc.title:
-                key = (str(doc.id), chunk.section_title)
-                if key not in seen_doc_ids:
-                    seen_doc_ids.add(key)
-                    verified_citations.append({
-                        "document_title": doc.title,
-                        "document_id": str(doc.id),
-                        "section_id": chunk.section_id,
-                        "section_title": chunk.section_title,
-                        "page_number": chunk.page_number,
-                        "line_start": chunk.line_start,
-                        "line_end": chunk.line_end,
-                        "text": chunk.content[:300],
-                        "source_url": doc.source_url,
-                    })
+                matched_doc_ids.add(str(doc.id))
                 break
 
-    # If the model didn't cite properly, add all retrieved chunks as sources
-    if not verified_citations:
-        for chunk, doc, distance in chunks:
-            key = (str(doc.id), chunk.section_title)
-            if key not in seen_doc_ids:
-                seen_doc_ids.add(key)
-                verified_citations.append({
-                    "document_title": doc.title,
-                    "document_id": str(doc.id),
-                    "section_id": chunk.section_id,
-                    "section_title": chunk.section_title,
-                    "page_number": chunk.page_number,
-                    "line_start": chunk.line_start,
-                    "line_end": chunk.line_end,
-                    "text": chunk.content[:300],
-                    "source_url": doc.source_url,
-                })
+    # Fallback: if model didn't cite properly, use all retrieved documents
+    if not matched_doc_ids:
+        matched_doc_ids = {str(doc.id) for _, doc, _ in chunks}
+
+    # Group all chunks by matched document
+    matched_docs: dict[str, list] = {}
+    for chunk, doc, distance in chunks:
+        doc_id = str(doc.id)
+        if doc_id in matched_doc_ids:
+            if doc_id not in matched_docs:
+                matched_docs[doc_id] = []
+            matched_docs[doc_id].append((chunk, doc))
+
+    # Consolidate: one citation entry per document
+    verified_citations = []
+    for doc_id, chunk_doc_pairs in matched_docs.items():
+        doc = chunk_doc_pairs[0][1]
+        sections = []
+        pages = []
+        best_text = ""
+        for chunk, _ in chunk_doc_pairs:
+            if chunk.section_title and chunk.section_title not in sections:
+                sections.append(chunk.section_title)
+            if chunk.page_number and chunk.page_number not in pages:
+                pages.append(chunk.page_number)
+            if len(chunk.content) > len(best_text):
+                best_text = chunk.content
+        verified_citations.append({
+            "document_title": doc.title,
+            "document_id": doc_id,
+            "section_title": ", ".join(sections) if sections else None,
+            "page_number": ", ".join(str(p) for p in sorted(pages)) if pages else None,
+            "text": best_text[:300],
+            "source_url": doc.source_url,
+        })
 
     # Clean citation markers from the answer text for readability
     cleaned_answer = re.sub(r"\[(?:Source:\s*)?[^\]]+\]", "", answer).strip()
