@@ -22,6 +22,14 @@ def parse_pdf(file_path: str) -> list[ParsedSection]:
 
     with pdfplumber.open(file_path) as pdf:
         for page_num, page in enumerate(pdf.pages, start=1):
+            # Try table extraction first for structured/tabular PDFs
+            tables = page.extract_tables()
+            if tables and _is_tabular_page(tables, page):
+                page_sections = _parse_tabular_page(tables, page_num)
+                sections.extend(page_sections)
+                continue
+
+            # Fall back to text extraction for prose-style PDFs
             text = page.extract_text()
             if not text:
                 continue
@@ -35,6 +43,65 @@ def parse_pdf(file_path: str) -> list[ParsedSection]:
         sections = _ocr_pdf(file_path)
 
     logger.info("Parsed PDF: %d sections from %s", len(sections), file_path)
+    return sections
+
+
+def _is_tabular_page(tables: list, page) -> bool:
+    """Detect if a page is primarily tabular (e.g. tax statements, payslips).
+
+    Heuristic: if the largest table covers most rows relative to page text lines,
+    it's a tabular document where table extraction produces better results.
+    """
+    if not tables:
+        return False
+    largest_table = max(tables, key=len)
+    # Tabular if the main table has 10+ rows (structured form)
+    return len(largest_table) >= 10
+
+
+def _parse_tabular_page(tables: list, page_number: int) -> list[ParsedSection]:
+    """Parse a tabular page by extracting field-value pairs from tables.
+
+    Groups related rows into chunks of ~5-8 fields each so the LLM
+    gets enough context per chunk without drowning in a giant table.
+    """
+    lines = []
+    for table in tables:
+        for row in table:
+            if not row:
+                continue
+            # row is [label, sub_label, euro_value, ct_value] or similar
+            cells = [str(c).strip() if c else "" for c in row]
+            # Skip empty rows
+            if not any(cells):
+                continue
+            # Build a clean "label: value" line
+            label = cells[0].replace("\n", " ").strip()
+            # Try to find value in remaining cells
+            value_parts = [c.replace("\n", " ").strip() for c in cells[1:] if c.strip() and c.strip() not in ("-------", "--")]
+            if label and value_parts:
+                value = " ".join(value_parts)
+                lines.append(f"{label}: {value}")
+            elif label:
+                lines.append(label)
+
+    if not lines:
+        return []
+
+    # Group into chunks of ~8 lines for reasonable context size
+    chunk_size = 8
+    sections = []
+    for i in range(0, len(lines), chunk_size):
+        chunk_lines = lines[i:i + chunk_size]
+        content = "\n".join(chunk_lines)
+        # Use first line as section title
+        title = chunk_lines[0].split(":")[0].strip() if chunk_lines else None
+        sections.append(ParsedSection(
+            content=content,
+            page_number=page_number,
+            section_title=title,
+        ))
+
     return sections
 
 

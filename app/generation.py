@@ -12,7 +12,12 @@ SYSTEM_PROMPT = """Always respond in English, even if sources are in another lan
 Answer the question using ONLY the provided sources. Never use outside knowledge.
 If the sources contain the answer, answer directly.
 If not, say "I could not find this in the indexed documents."
-Cite sources by name, like: [ecosio_contract] or [Employment Contract]."""
+Cite sources by name, like: [ecosio_contract] or [Employment Contract].
+
+Sources may come from scanned PDFs where table layouts are garbled. Numbers near field labels
+(like "4. withheld income tax" followed by "32.170 00") represent the value for that field.
+German number format uses dots for thousands and commas for decimals (e.g. 32.170,00 = €32,170.00).
+Extract and present these values clearly."""
 
 
 def build_context(
