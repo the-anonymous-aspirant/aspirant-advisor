@@ -80,9 +80,9 @@ class Citation(BaseModel):
     document_id: uuid.UUID
     section_id: str | None
     section_title: str | None
-    page_number: int | None
-    line_start: int | None
-    line_end: int | None
+    page_number: str | None
+    line_start: str | None
+    line_end: str | None
     text: str
     source_url: str | None
 
